@@ -1,9 +1,17 @@
 #!/bin/bash -e
 
 MOUNT_POINT="/tmp/mntpoint"
+INITRAMFS_TMP="/tmp/ifs"
 CUR_STEP=1
+
 FORCE_INFLATION=0
 # see define_partitions() for definition of partitions (sizes, number and label)
+
+FORCE_DOMA_IMAGE_UPDATE=0
+# If 1, it will repack initramfs and add DomA Image(from DomA dir) to it
+
+FORCE_AVB=0
+# Create specific android config with Android verified boot cmdline
 
 ###############################################################################
 # DomA configuration
@@ -25,9 +33,11 @@ usage()
 	echo "  -p image-folder Base daily build folder where artifacts live"
 	echo "  -d image-file   Output image file or physical device"
 	echo "  -c config       Configuration of partitions for product: aos, ces2019, devel or gen3"
-	echo "  -s image-size   Optional, image size in GiB"
+	echo "  -s image-size   Optional, image size in GB"
 	echo "  -u domain       Optional, unpack only specified domain: dom0, domd, domf, doma, domu"
 	echo "  -f              Optional, force rewrite of image file (useful for batch usage)"
+	echo "  -r              Optional, force repack of initiramfs and add DomA Image(from DomA dir) to it"
+	echo "  -v              Optional, create specific android config with Android verified boot cmdline"
 
 	exit 1
 }
@@ -35,7 +45,7 @@ usage()
 define_partitions()
 {
 	# Define partitions for different products.
-	# All numbers will be used as MiB (1024 KiB).
+	# All numbers will be used as MB.
 	# Products are listed in alphabetical order.
 	case $1 in
 		aos)
@@ -52,7 +62,7 @@ define_partitions()
 			DOMF_END=$((DOMF_START+4000))  # 8257
 			DOMF_PARTITION=3
 			DOMF_LABEL=domf
-			DEFAULT_IMAGE_SIZE_GIB=$(((DOMF_END/1024)+1))
+			DEFAULT_IMAGE_SIZE_GB=$(((DOMF_END/1024)+1))
 		;;
 		ces2019)
 			# prod-ces2019 [1..257][257..4257][4257..8680]
@@ -68,7 +78,7 @@ define_partitions()
 			DOMA_END=$((DOMA_START+4440))  # 8697
 			DOMA_PARTITION=3
 			DOMA_LABEL=doma
-			DEFAULT_IMAGE_SIZE_GIB=$(((DOMA_END/1024)+1))
+			DEFAULT_IMAGE_SIZE_GB=$(((DOMA_END/1024)+1))
 		;;
 		devel)
 			# prod-devel [1..257][257..2257][2257..6680]
@@ -84,7 +94,7 @@ define_partitions()
 			DOMA_END=$((DOMA_START+4440))  # 6697
 			DOMA_PARTITION=3
 			DOMA_LABEL=doma
-			DEFAULT_IMAGE_SIZE_GIB=$(((DOMA_END/1024)+1))
+			DEFAULT_IMAGE_SIZE_GB=$(((DOMA_END/1024)+1))
 		;;
 		gen3)
 			# prod-gen3-test [1..257][257..2257][2257..4257]
@@ -100,7 +110,7 @@ define_partitions()
 			DOMU_END=$((DOMU_START+2000))  # 4257
 			DOMU_PARTITION=3
 			DOMU_LABEL=domu
-			DEFAULT_IMAGE_SIZE_GIB=$(((DOMU_END/1024)+1))
+			DEFAULT_IMAGE_SIZE_GB=$(((DOMU_END/1024)+1))
 		;;
 		*)
 			echo "Unknown configuration provided for -c."
@@ -133,16 +143,7 @@ inflate_image()
 		return 0
 	fi
 
-	# If SD card is specified as target, but not plugged into PC,
-	# we will have incorrect situation: file will be created inside /dev folder
-	# with name like /dev/sdc. This error sometimes is hard to clarify.
-	# In order to avoid such confusion we will not create files inside /dev.
-	if [[ "$dev" == /dev/* ]]; then
-		echo "Error: device is not connected."
-		exit 1
-	fi
-
-	echo "Inflating image file at $dev of size ${size_gb}GiB"
+	echo "Inflating image file at $dev of size ${size_gb}GB"
 
 	local inflate=1
 	if [ -e $1 ] && [ $FORCE_INFLATION -ne 1 ] ; then
@@ -175,16 +176,16 @@ partition_image()
 	# create partitions
 	sudo parted -s $1 mklabel msdos || true
 
-	sudo parted -s $1 mkpart primary ext4 ${DOM0_START}MiB ${DOM0_END}MiB || true
-	sudo parted -s $1 mkpart primary ext4 ${DOMD_START}MiB ${DOMD_END}MiB || true
+	sudo parted -s $1 mkpart primary ext4 ${DOM0_START}MB ${DOM0_END}MB || true
+	sudo parted -s $1 mkpart primary ext4 ${DOMD_START}MB ${DOMD_END}MB || true
 	if [ ! -z ${DOMF_START} ]; then
-		sudo parted -s $1 mkpart primary ext4 ${DOMF_START}MiB ${DOMF_END}MiB || true
+		sudo parted -s $1 mkpart primary ext4 ${DOMF_START}MB ${DOMF_END}MB || true
 	fi
 	if [ ! -z ${DOMU_START} ]; then
-		sudo parted -s $1 mkpart primary ext4 ${DOMU_START}MiB ${DOMU_END}MiB || true
+		sudo parted -s $1 mkpart primary ext4 ${DOMU_START}MB ${DOMU_END}MB || true
 	fi
 	if [ ! -z ${DOMA_START} ]; then
-		sudo parted -s $1 mkpart primary ${DOMA_START}MiB ${DOMA_END}MiB || true
+		sudo parted -s $1 mkpart primary ${DOMA_START}MB ${DOMA_END}MB || true
 	fi
 	sudo parted $1 print
 	sudo partprobe $1
@@ -199,12 +200,12 @@ partition_image()
 
 		# parted generates error on all operation with "nested" disk, guard it with || true
 		sudo parted $loop_dev_a -s mklabel gpt || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_SYSTEM_PARTITION_ID}    ext4 1MiB  3148MiB || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_VENDOR_PARTITION_ID}    ext4 3149MiB  3418MiB || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_MISC_PARTITION_ID}      ext4 3419MiB  3420MiB || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_VBMETA_PARTITION_ID}    ext4 3421MiB  3422MiB || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_METADATA_PARTITION_ID}  ext4 3423MiB  3434MiB || true
-		sudo parted $loop_dev_a -s mkpart xvda${DOMA_USERDATA_PARTITION_ID}  ext4 3435MiB  4435MiB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_SYSTEM_PARTITION_ID}    ext4 1MB  3148MB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_VENDOR_PARTITION_ID}    ext4 3149MB  3418MB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_MISC_PARTITION_ID}      ext4 3419MB  3420MB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_VBMETA_PARTITION_ID}    ext4 3421MB  3422MB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_METADATA_PARTITION_ID}  ext4 3423MB  3434MB || true
+		sudo parted $loop_dev_a -s mkpart xvda${DOMA_USERDATA_PARTITION_ID}  ext4 3435MB  4440MB || true
 		sudo parted $loop_dev_a -s print
 		sudo partprobe $loop_dev_a || true
 
@@ -339,6 +340,10 @@ unpack_dom0()
 	local domd_name=`ls $db_base_folder | grep domd`
 	local domd_root=$db_base_folder/$domd_name
 
+	local doma_name=`ls $db_base_folder | grep android`
+	local doma_root=$db_base_folder/$doma_name
+	local doma_image=`find $doma_root -name Image`
+
 	local Image=`find $dom0_root -name Image`
 	local uInitramfs=`find $dom0_root -name uInitramfs`
 	local dom0dtb=`find $domd_root -name dom0.dtb`
@@ -359,6 +364,28 @@ unpack_dom0()
 	mount_part $loop_base $part $MOUNT_POINT
 
 	sudo mkdir "${MOUNT_POINT}/boot" || true
+
+	if [ ${FORCE_DOMA_IMAGE_UPDATE} -eq 1 ]; then
+		echo "Will start process of repacking Initramfs with updated DomA Image..."
+		local urifs_present=`which uirfs.sh 2>&1>/dev/null ; echo $?`
+
+		if [ ${urifs_present} -ne 0 ]; then
+			echo "unable to find uirfs.sh, please add it to PATH...."
+			exit 1
+		fi
+		if [ -d ${INITRAMFS_TMP} ]; then
+			rm -rf ${INITRAMFS_TMP}
+		fi
+		mkdir ${INITRAMFS_TMP}
+		uirfs.sh unpack ${uInitramfs} ${INITRAMFS_TMP}
+		cp ${doma_image} ${INITRAMFS_TMP}/xt/doma/Image
+
+		if [ ${FORCE_AVB} -eq 1 ]; then
+			sed  -e 's:root\=\/dev\/xvda1:'"$DM_CMD"':g' ${INITRAMFS_TMP}/xt/dom.cfg/doma.cfg > ${INITRAMFS_TMP}/xt/dom.cfg/doma-avb.cfg;
+		fi
+
+		uirfs.sh pack ${uInitramfs} ${INITRAMFS_TMP}
+	fi
 
 	for f in $Image $uInitramfs $dom0dtb $xenpolicy $xenuImage ; do
 		sudo cp -L $f "${MOUNT_POINT}/boot/"
@@ -412,6 +439,9 @@ unpack_doma()
 	local system=`find $doma_root -name "system.img"`
 	local vendor=`find $doma_root -name "vendor.img"`
 	local vbmeta=`find $doma_root -name "vbmeta.img"`
+	local system_dev=${loop_base}p${DOMA_SYSTEM_PARTITION_ID}
+	local vendor_dev=${loop_base}p${DOMA_VENDOR_PARTITION_ID}
+	local vbmeta_dev=${loop_base}p${DOMA_VBMETA_PARTITION_ID}
 
 	echo "DomA system image is at $system"
 	echo "DomA vendor image is at $vendor"
@@ -419,17 +449,29 @@ unpack_doma()
 	simg2img $system $raw_system
 	simg2img $vendor $raw_vendor
 
-	sudo dd if=$raw_system of=${loop_base}p${DOMA_SYSTEM_PARTITION_ID} bs=1M status=progress
-	sudo dd if=$raw_vendor of=${loop_base}p${DOMA_VENDOR_PARTITION_ID} bs=1M status=progress
+	sudo dd if=$raw_system of=${system_dev} bs=1M status=progress
+	sudo dd if=$raw_vendor of=${vendor_dev} bs=1M status=progress
 
 	if [ ! -z ${vbmeta} ]; then
-		sudo dd if=$vbmeta of=${loop_base}p${DOMA_VBMETA_PARTITION_ID} bs=1M status=progress
+		sudo dd if=$vbmeta of=${vbmeta_dev} bs=1M status=progress
 	fi
 
 	echo "Wipe out DomA/misc"
 	sudo dd if=/dev/zero of=${loop_base}p${DOMA_MISC_PARTITION_ID} bs=1M count=1 || true
 
 	rm -f $raw_system $raw_vendor
+
+	if [ ${FORCE_AVB} -eq 1 ]; then
+		echo "AVB option present, will generate DM cmd ..."
+		local system_partuuid=`ls -l /dev/disk/by-partuuid/  | grep ${system_dev:5} | awk '{print $9}'`
+		local vbmeta_partuuid=`ls -l /dev/disk/by-partuuid/  | grep ${vbmeta_dev:5} | awk '{print $9}'`
+		local vbmeta_sha256=`sha256sum ${vbmeta} | awk '{print $1}'`
+		echo "system partuuid = "${system_partuuid}
+		echo "vbmeta partuuid = "${vbmeta_partuuid}
+		echo "vbmeta sha256 = "${vbmeta_sha256}
+		local dm_cmd="dm=\\\\\""`dd if=${vbmeta} bs=1 skip=1292 count=219`" 2 ignore_corruption ignore_zero_blocks\\\\\" root=/dev/dm-0 androidboot.vbmeta.device=PARTUUID=${vbmeta_partuuid} androidboot.veritymode=ignore_corruption androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4096 androidboot.vbmeta.avb_version=1.1 androidboot.vbmeta.device_state=unlocked androidboot.vbmeta.digest=${vbmeta_sha256}"
+		export DM_CMD=`echo ${dm_cmd} | sed  -e 's/$(ANDROID_SYSTEM_PARTUUID)/'"$system_partuuid"'/g'`
+	fi
 }
 
 unpack_image()
@@ -437,7 +479,6 @@ unpack_image()
 	local db_base_folder=$1
 	local img_output_file=$2
 
-	unpack_dom0 $db_base_folder $img_output_file
 	unpack_domd $db_base_folder $img_output_file
 	if [ ! -z ${DOMF_START} ]; then
 		unpack_domf $db_base_folder $img_output_file
@@ -457,6 +498,9 @@ unpack_image()
 		unpack_doma $db_base_folder $loop_dev_a
 		sudo losetup -d $loop_dev_a
 	fi
+	# We need to process dom0 after DomA, because on unpack_doma will generate
+	# cmdline for AVB
+	unpack_dom0 $db_base_folder $img_output_file
 }
 
 ###############################################################################
@@ -529,7 +573,7 @@ fi
 
 print_step "Parsing input parameters"
 
-while getopts ":p:d:c:s:u:f" opt; do
+while getopts ":p:d:c:s:u:frv" opt; do
 	case $opt in
 		p) ARG_DEPLOY_PATH="$OPTARG"
 		;;
@@ -542,6 +586,10 @@ while getopts ":p:d:c:s:u:f" opt; do
 		u) ARG_UNPACK_DOM="$OPTARG"
 		;;
 		f) FORCE_INFLATION=1
+		;;
+		r) FORCE_DOMA_IMAGE_UPDATE=1
+		;;
+		v) FORCE_AVB=1
 		;;
 		\?) echo "Invalid option -$OPTARG" >&2
 		exit 1
@@ -595,8 +643,8 @@ fi
 echo "Using deploy path: \"$ARG_DEPLOY_PATH\""
 echo "Using device     : \"$ARG_DEPLOY_DEV\""
 
-if [ -z ${ARG_IMG_SIZE_GIB} ]; then
-	ARG_IMG_SIZE_GIB=${DEFAULT_IMAGE_SIZE_GIB}
+if [ -z ${ARG_IMG_SIZE_GB} ]; then
+	ARG_IMG_SIZE_GB=${DEFAULT_IMAGE_SIZE_GB}
 fi
 inflate_image $ARG_DEPLOY_DEV $ARG_IMG_SIZE_GIB
 
