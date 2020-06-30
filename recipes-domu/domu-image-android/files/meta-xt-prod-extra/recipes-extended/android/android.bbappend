@@ -16,7 +16,6 @@ SRC_URI_append = " \
     repo://github.com/xen-troops/android_manifest;protocol=https;branch=android-10.0.0_r3-master;manifest=doma.xml;scmdata=keep \
     https://dl.google.com/android/repository/android-ndk-r17c-linux-x86_64.zip;name=ndk \
     https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip;name=sdk; \
-    git://git@gitpct.epam.com/epmd-aepr/pvr.git;protocol=ssh;branch=1.11/5375571-7.1.0-10.0.0_r3-xt0.1-standalone \
     http://llvm.org/releases/7.0.0/llvm-${VERSION}.src.tar.xz;name=llvm \
     http://llvm.org/releases/7.0.0/cfe-${VERSION}.src.tar.xz;name=cfe \
     https://github.com/dmlc/tvm/archive/${TVM_VERSION}.zip;name=tvm \
@@ -25,7 +24,7 @@ SRC_URI_append = " \
     https://github.com/dmlc/dmlc-core/archive/${DMLC_VERSION}.zip;name=dmlccore \
     https://cmake.org/files/v3.11/cmake-3.11.4.tar.gz;name=cmake \
 "
-
+#git://git@gitpct.epam.com/epmd-aepr/pvr.git;protocol=ssh;branch=1.11/5375571-7.1.0-10.0.0_r3-xt0.1-standalone
 SRC_URI[ndk.md5sum] = "a4b6b8281e7d101efd994d31e64af746"
 SRC_URI[ndk.sha256sum] = "3f541adbd0330a9205ba12697f6d04ec90752c53d6b622101a2a8a856e816589"
 SRC_URI[sdk.md5sum] = "aa190cfd7299cd6a1c687355bb2764e4"
@@ -269,37 +268,48 @@ do_compile_append() {
 
     CC=clang
     CXX=clang++ 
-    cmake ${common_llvm_flags} -DLLVM_ENABLE_ASSERTIONS=On ${LLVM_SOURCE_DIR}
-    cd ${WORKDIR}/repo
-    bash -c "source build/envsetup.sh && \
+
+    if [ ! -f ${LLVM_SOURCE_DIR}/host_build/.signature ]; then
+
+        cmake ${common_llvm_flags} -DLLVM_ENABLE_ASSERTIONS=On ${LLVM_SOURCE_DIR}
+
+        cd ${WORKDIR}/repo
+
+        bash -c "source build/envsetup.sh && \
              lunch xenvm-userdebug && \
              make -j16 -C ${LLVM_SOURCE_DIR}/host_build clang-tblgen llvm-tblgen llvm-as llvm-link && \
              make -j16 -C ${LLVM_SOURCE_DIR}/host_build clang ${CLANG_ARCHIVES} ${LLVM_ARCHIVES} \
-    "
-    cd ${LLVM_SOURCE_DIR}/host_build
+        "
+        cd ${LLVM_SOURCE_DIR}/host_build
 
-    #make -j16 clang-tblgen llvm-tblgen llvm-as llvm-link
-    #make -j16 clang ${CLANG_ARCHIVES} ${LLVM_ARCHIVES}
+        #make -j16 clang-tblgen llvm-tblgen llvm-as llvm-link
+        #make -j16 clang ${CLANG_ARCHIVES} ${LLVM_ARCHIVES}
 
-    # Move the created binaries into ${NDK_ROOT}/out/local/host/bin/
+        # Move the created binaries into ${NDK_ROOT}/out/local/host/bin/
 
-    bins_folder=${WORKDIR}/ndk-bundle/out/local/host/bin/
+        bins_folder=${WORKDIR}/ndk-bundle/out/local/host/bin/
 
-    mkdir -p ${bins_folder}
-    mv bin/clang${LIBRARY_POSTFIX} bin/llvm-as${LIBRARY_POSTFIX} bin/llvm-link${LIBRARY_POSTFIX} ${bins_folder}
+        mkdir -p ${bins_folder}
+        mv bin/clang${LIBRARY_POSTFIX} bin/llvm-as${LIBRARY_POSTFIX} bin/llvm-link${LIBRARY_POSTFIX} ${bins_folder}
 
-    # Move the created libraries into ${NDK_ROOT}/out/local/host/lib/
+        # Move the created libraries into ${NDK_ROOT}/out/local/host/lib/
 
-    libs_folder=${WORKDIR}/ndk-bundle/out/local/host/lib/llvm${LIBRARY_POSTFIX}${FOLDER_POSTFIX}/
+        libs_folder=${WORKDIR}/ndk-bundle/out/local/host/lib/llvm${LIBRARY_POSTFIX}${FOLDER_POSTFIX}/
 
-    mkdir -p ${libs_folder}
-    mv ${target_llvm_libs} ${target_clang_libs} ${libs_folder}
+        mkdir -p ${libs_folder}
+        mv ${target_llvm_libs} ${target_clang_libs} ${libs_folder}
+        
+        build_signature=$(md5sum ${LLVM_SOURCE_DIR}/host_build/Makefile)
+        echo ${build_signature} > ${LLVM_SOURCE_DIR}/host_build/.signature
 
-    echo ${build_signature} > ${libs_folder}/llvm-signature
-    
+    else
+      echo "Signature exists ${LLVM_SOURCE_DIR}/host_build/.signature, no needs to build again."
+    fi
+
     # Remove unused files, as libraries have already been moved in the NDK out folder.
     # The files in bin/ are kept as they contain llvm-tblgen and clang-tblgen and they
     # are needed for the target builds.
+
     rm -rf lib
     rm -rf tools/clang/lib
 
@@ -309,6 +319,11 @@ do_compile_append() {
       echo "Building LLVM libraries for ${android_abi}"
       
       libs_folder=${WORKDIR}/ndk-bundle/out/local/${android_abi}/llvm${LIBRARY_POSTFIX}${FOLDER_POSTFIX}/
+      
+      if [ -d ${libs_folder} ]; then
+        echo "${libs_folder} exists, no needs to recompile."
+        continue
+      fi 
 
       rm -rf target_build
       mkdir target_build
@@ -331,13 +346,12 @@ do_compile_append() {
                make -j16 -C ${cdir}  ${CLANG_ARCHIVES} ${LLVM_ARCHIVES} \
       "
       cd ${cdir}
+
       #make -j16 ${CLANG_ARCHIVES} ${LLVM_ARCHIVES}
 
       mkdir -p ${libs_folder}
       mv ${target_llvm_libs} ${target_clang_libs} ${libs_folder}
    
-      echo ${BUILD_SIGNATURE} > ${libs_folder}/llvm-signature
-
       # Remove unused files, as libraries have already been moved in the NDK out folder.
       rm -rf bin
       rm -rf lib
@@ -415,21 +429,38 @@ do_compile_append() {
    unset ANDROID_SDK
    unset LDFLAGS
 
-   bash -c "source build/envsetup.sh && \
+   if [ ! -f ${DDK_TOP}/.signature ]; then
+
+      bash -c "source build/envsetup.sh && \
                    lunch xenvm-userdebug && \
                    make all -C ${DDK_TOP} \
-   "
+      "
+      build_signature=$(md5sum ${DDK_TOP}/Makefile)
+      echo ${build_signature} > ${DDK_TOP}/.signature
+
+      cp -rf ${WORKDIR}/git/out/vendor/* ${WORKDIR}/repo/vendor/imagination/rogue_um
    
-   cp -R ${WORKDIR}/git/out/vendor ${WORKDIR}/repo/vendor/imagination/rogue_um
-   
-   #backup the prev sources
-   mv ${WORKDIR}/repo/vendor/imagination/rogue_km ${WORKDIR}/repo/vendor/imagination/rogue_km_origin
-   
-   cp -R ${WORKDIR}/git/rogue_km ${WORKDIR}/repo/vendor/imagination
+      #backup the prev sources
+      cp -rf ${WORKDIR}/repo/vendor/imagination/rogue_km ${WORKDIR}/repo/vendor/imagination/rogue_km_origin
+      # update rogue_km
+      cp -rf ${WORKDIR}/git/rogue_km/* ${WORKDIR}/repo/vendor/imagination/rogue_km
+
+      cd ${ANDROID_PRODUCT_OUT}/system
+      # save the copy of the real libs (for debug)
+      mv lib64/libc.so lib64/libc.so_ 
+      mv lib64/libdl.so lib64/libdl.so_
+      mv lib64/libm.so lib64/libm.so_
+      mv lib/libc.so  lib/libc.so_
+      mv lib/libdl.so lib/libdl.so_ 
+      mv lib/libm.so lib/libm.so_
+   else
+      echo "${DDK_TOP}/.signature exists, no needs to rebuild."
+   fi
 
    cd ${WORKDIR}/repo
-
-   env -i HOME="$HOME" LC_CTYPE="${LC_ALL:-${LC_CTYPE:-$LANG}}" USER="$USER" \
+   
+   if [ ! -f ${WORKDIR}/repo/.gfx_signature ]; then 
+       env -i HOME="$HOME" LC_CTYPE="${LC_ALL:-${LC_CTYPE:-$LANG}}" USER="$USER" \
            PATH="${USRBINPATH_NATIVE}:${PATH}" \
            OUT_DIR_COMMON_BASE="${ANDROID_OUT_DIR_COMMON_BASE}" \
            DDK_KM_PREBUILT_MODULE="${DDK_KM_PREBUILT_MODULE}" \
@@ -440,6 +471,11 @@ do_compile_append() {
                     make install clean && \
                     make ${EXTRA_OEMAKE} -j16 \
            "
+      build_signature=$(md5sum ${WORKDIR}/repo/Makefile)
+      echo ${build_signature} > ${WORKDIR}/repo/.gfx_signature
+   else
+      echo "${WORKDIR}/repo/.gfx_signature exists, no needs to rebuild."
+   fi
 }
 
 ################################################################################
