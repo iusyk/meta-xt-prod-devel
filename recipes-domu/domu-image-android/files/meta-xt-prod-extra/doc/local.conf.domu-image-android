@@ -222,13 +222,14 @@ HOSTTOOLS += "gcc-5"
 HOSTTOOLS += "g++-5"
 HOSTTOOLS += "pigz"
 HOSTTOOLS += "unpigz"
-HOSTTOOLS += "cmake"
 HOSTTOOLS += "clang"
 HOSTTOOLS += "clang++"
 
 DEPLOY_DIR = "${TMPDIR}/deploy"
 IMAGE_ROOTFS = "${TMPDIR}/rootfs"
 XT_SHARED_ROOTFS_DIR = "${IMAGE_ROOTFS}/shared_rootfs"
+
+PREFERRED_VERSION_cmake-native = "3.11.4"
 
 include ${@d.getVar('XT_SHARED_ROOTFS_DIR', True) or ''}/local.conf.domd_machine.inc
 

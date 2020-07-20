@@ -62,6 +62,7 @@ PATCHTOOL = "git"
 DEPENDS += " python-clang-native"
 DEPENDS += "python-pycrypto-native"
 PREFERRED_VERSION_python-clang = "6.0"
+DEPENDS += "cmake-native"
 
 ################################################################################
 # Renesas R-Car
