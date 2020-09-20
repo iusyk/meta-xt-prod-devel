@@ -9,7 +9,8 @@ IMAGE_INSTALL_append = " \
     kernel-modules \
     kmscube \
     optee-os \
-    ${@bb.utils.contains('XT_GUESTS_INSTALL', 'doma', 'displaymanager', '', d)} \
+    displaymanager \
+    guest-addons-display-manager-service \
 "
 
 python __anonymous () {
@@ -37,6 +38,13 @@ IMAGE_INSTALL_remove = " \
 # Use only provided proprietary graphic modules
 IMAGE_INSTALL_remove = " \
     packagegroup-graphics-renesas-proprietary \
+"
+IMAGE_INSTALL_append_kingfisher = " \
+    iw \
+"
+
+IMAGE_INSTALL_remove_kingfisher = " \
+    wireless-tools \
 "
 
 CORE_IMAGE_BASE_INSTALL_remove += "gtk+3-demo clutter-1.0-examples"

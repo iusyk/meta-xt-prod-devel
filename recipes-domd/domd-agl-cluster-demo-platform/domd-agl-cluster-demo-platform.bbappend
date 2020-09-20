@@ -36,6 +36,8 @@ python do_domd_install_machine_overrides() {
     bb.build.exec_func("build_yocto_exec_bitbake", d)
 }
 
+#IMAGE_INSTALL_remove = "guest-addons-display-manager-service"
+
 ################################################################################
 # Renesas R-Car
 ################################################################################

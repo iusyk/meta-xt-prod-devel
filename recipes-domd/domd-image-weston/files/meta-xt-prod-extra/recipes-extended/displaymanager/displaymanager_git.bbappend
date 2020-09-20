@@ -29,21 +29,20 @@ DM_CONFIG_salvator-xs-m3n-xt = "dm-salvator-xs-m3n.cfg"
 
 inherit systemd
 
-SYSTEMD_SERVICE_${PN} = "display-manager.service"
+#SYSTEMD_SERVICE_${PN} = "display-manager.service"
 
 do_install_append() {
     install -d ${D}${sysconfdir}/dbus-1/system.d
     install -m 0755 ${WORKDIR}/display_manager.conf ${D}${sysconfdir}/dbus-1/system.d/
 
-    install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/display-manager.service ${D}${systemd_system_unitdir}
+    #install -d ${D}${systemd_system_unitdir}
+    #install -m 0644 ${WORKDIR}/display-manager.service ${D}${systemd_system_unitdir}
 
     install -d ${D}${base_prefix}${XT_DIR_ABS_ROOTFS_CFG}
     install -m 0744 ${WORKDIR}/${DM_CONFIG} ${D}${base_prefix}${XT_DIR_ABS_ROOTFS_CFG}/dm.cfg
 }
-
+#${systemd_system_unitdir}/display-manager.service
 FILES_${PN} += " \
-    ${systemd_system_unitdir}/display-manager.service \
     ${base_prefix}${XT_DIR_ABS_ROOTFS_CFG}/dm.cfg \
     ${sysconfdir}/dbus-1/session.d/display_manager.conf \
 "
