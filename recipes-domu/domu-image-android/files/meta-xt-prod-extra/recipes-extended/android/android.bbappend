@@ -14,6 +14,7 @@ DMLC_VERSION="ac983092ee3b339f76a2d7e7c3b846570218200d"
 
 SRC_URI_append = " \
     repo://github.com/xen-troops/android_manifest;protocol=https;branch=android-10.0.0_r3-master;manifest=doma.xml;scmdata=keep \
+    git://git@gitpct.epam.com/epmd-aepr/pvr.git;protocol=ssh;branch=1.11/5375571-7.1.0-10.0.0_r3-xt0.1-standalone \
     https://dl.google.com/android/repository/android-ndk-r17c-linux-x86_64.zip;name=ndk \
     https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip;name=sdk; \
     http://llvm.org/releases/7.0.0/llvm-${VERSION}.src.tar.xz;name=llvm \
@@ -22,9 +23,11 @@ SRC_URI_append = " \
     https://github.com/dmlc/HalideIR/archive/${HALIDEIR_VERSION}.zip;name=hir \
     https://github.com/dmlc/dlpack/archive/${DLPACK_VERSION}.zip;name=dlpack \
     https://github.com/dmlc/dmlc-core/archive/${DMLC_VERSION}.zip;name=dmlccore \
-    https://cmake.org/files/v3.11/cmake-3.11.4.tar.gz;name=cmake \
+    git://android.googlesource.com/platform/external/libunwind_llvm;protocol=https;destsuffix=ndk-bundle/apps/libunwind_llvm;branch=pie-release \
+    git://android.googlesource.com/platform/external/libcxxabi;protocol=https;destsuffix=ndk-bundle/apps/libcxxabi;branch=pie-release \
+    git://android.googlesource.com/platform/external/libcxx;protocol=https;destsuffix=ndk-bundle/apps/libcxx;branch=pie-release \
 "
-#git://git@gitpct.epam.com/epmd-aepr/pvr.git;protocol=ssh;branch=1.11/5375571-7.1.0-10.0.0_r3-xt0.1-standalone
+#https://cmake.org/files/v3.11/cmake-3.11.4.tar.gz;name=cmake
 SRC_URI[ndk.md5sum] = "a4b6b8281e7d101efd994d31e64af746"
 SRC_URI[ndk.sha256sum] = "3f541adbd0330a9205ba12697f6d04ec90752c53d6b622101a2a8a856e816589"
 SRC_URI[sdk.md5sum] = "aa190cfd7299cd6a1c687355bb2764e4"
@@ -114,7 +117,7 @@ do_configure_prepend() {
     #sudo make install
     
     if [ -d "${WORKDIR}/android-ndk-r17c" ]; then
-       mv ${WORKDIR}/android-ndk-r17c ${WORKDIR}/ndk-bundle
+       mv ${WORKDIR}/android-ndk-r17c/* ${WORKDIR}/ndk-bundle/
     fi
 
     cd ${WORKDIR}/git
@@ -122,20 +125,6 @@ do_configure_prepend() {
     git submodule update --remote
 
     ln -sf ${WORKDIR}/ndk-bundle/platforms/android-24 ${WORKDIR}/ndk-bundle/platforms/android-25
-
-    if [ -d "${WORKDIR}/ndk-bundle/apps/libunwind_llvm" ]; then
-       rm -rf ${WORKDIR}/ndk-bundle/apps/libunwind_llvm
-    fi
-    if [ -d "${WORKDIR}/ndk-bundle/apps/libcxxabi" ]; then
-       rm -rf ${WORKDIR}/ndk-bundle/apps/libcxxabi
-    fi
-    if [ -d "${WORKDIR}/ndk-bundle/apps/libcxx" ]; then
-       rm -rf ${WORKDIR}/ndk-bundle/apps/libcxx
-    fi
-
-    git clone https://android.googlesource.com/platform/external/libunwind_llvm ${WORKDIR}/ndk-bundle/apps/libunwind_llvm -b pie-release
-    git clone https://android.googlesource.com/platform/external/libcxxabi ${WORKDIR}/ndk-bundle/apps/libcxxabi -b pie-release
-    git clone https://android.googlesource.com/platform/external/libcxx ${WORKDIR}/ndk-bundle/apps/libcxx -b pie-release
 
     cd ${WORKDIR}/ndk-bundle/apps/libcxx && patch -Np3 -i ${WORKDIR}/git/rogue/android/patches/Pie-LIBCXX-add-NDK-build-support.diff
 
