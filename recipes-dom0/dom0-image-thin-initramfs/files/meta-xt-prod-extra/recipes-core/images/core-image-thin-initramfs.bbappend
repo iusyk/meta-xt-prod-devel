@@ -1,4 +1,4 @@
-DEPENDS += "${@bb.utils.contains('XT_GUESTS_INSTALL', 'doma', 'u-boot', '', d)} u-boot-mkimage-native"
+DEPENDS += "u-boot u-boot-mkimage-native"
 
 inherit deploy
 
@@ -14,7 +14,7 @@ IMAGE_INSTALL_append = " \
     domd \
     domd-run \
     domd-install-artifacts \
-    ${@bb.utils.contains('XT_GUESTS_INSTALL', 'doma', 'u-boot', '', d)} \
+    u-boot \
 "
 
 XT_GUESTS_INSTALL ?= "doma domf"

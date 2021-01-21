@@ -12,7 +12,8 @@ FILES_${PN} += "${base_prefix}${XT_DIR_ABS_ROOTFS_DOMU}"
 do_install[nostamp] = "1"
 do_install() {
    install -d "${D}/${base_prefix}${XT_DIR_ABS_ROOTFS_DOMU}"
-   find "${XT_DIR_ABS_SHARED_BOOT_DOMU}" -iname 'Image*' -exec \
+   
+   find "${XT_DIR_ABS_SHARED_BOOT_DOMU}" -iname '*dom*.dtb' -exec \
      cp -f --no-dereference --preserve=links {} "${D}/${base_prefix}${XT_DIR_ABS_ROOTFS_DOMU}" \;
 }
 

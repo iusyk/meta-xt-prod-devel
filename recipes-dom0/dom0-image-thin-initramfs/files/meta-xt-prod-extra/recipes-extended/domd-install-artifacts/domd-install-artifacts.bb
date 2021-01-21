@@ -12,9 +12,7 @@ FILES_${PN} += "${base_prefix}${XT_DIR_ABS_ROOTFS_DOMD}"
 do_install[nostamp] = "1"
 do_install() {
    install -d "${D}/${base_prefix}${XT_DIR_ABS_ROOTFS_DOMD}"
-   find "${XT_DIR_ABS_SHARED_BOOT_DOMD}" -iname 'Image*' -exec \
-     cp -f --no-dereference --preserve=links {} "${D}/${base_prefix}${XT_DIR_ABS_ROOTFS_DOMD}" \;
-
+   
    find "${XT_DIR_ABS_SHARED_BOOT_DOMD}" -iname '*dom*.dtb' -exec \
      cp -f --no-dereference --preserve=links {} "${D}/${base_prefix}${XT_DIR_ABS_ROOTFS_DOMD}" \;
 }
